@@ -19,21 +19,51 @@ A small macOS menu bar journal. Each day you write what you're grateful for and 
 
 ## Install
 
-You need macOS 13 (Ventura) or newer. Open Terminal and paste:
+You need a Mac running macOS 13 (Ventura) or newer. To check, open the Apple menu  and choose About This Mac.
 
-```
-curl -fsSL https://raw.githubusercontent.com/jydubbs/gratitude-ledger/main/install-gratitude-ledger.sh | bash
-```
+### Quick install (recommended)
 
-The first time, macOS may ask you to install Apple's free Command Line Tools. Install them, then paste the command again.
+You don't need to download anything first. The command fetches the installer from this repo and runs it.
 
-To update, paste the same command again. Your entries are not affected, because they live in iCloud, not in the app.
+1. Open **Terminal**. Press ⌘ Space, type `Terminal`, and press Return.
+2. Copy this whole line, paste it into Terminal and press Return:
 
-To uninstall:
+   ```
+   curl -fsSL https://raw.githubusercontent.com/jydubbs/gratitude-ledger/main/install-gratitude-ledger.sh | bash
+   ```
+
+3. Wait about a minute while it builds. When it's done, it prints **Done**, and a small closed book appears in your menu bar at the top right of the screen.
+
+**The first time only:** if your Mac doesn't have Apple's free Command Line Tools, a window will pop up asking to install them. Click **Install**, wait for it to finish (a few minutes), then do step 2 again.
+
+### Or download the installer yourself
+
+1. Click [`install-gratitude-ledger.sh`](install-gratitude-ledger.sh) in the file list above, then click the download button (↓ Download raw file) at the top right of the file view.
+2. Open Terminal and run:
+
+   ```
+   bash ~/Downloads/install-gratitude-ledger.sh
+   ```
+
+   If your browser saved it under a different name, for example `install-gratitude-ledger (1).sh`, use that name instead.
+
+### Can't see the book?
+
+If your menu bar is full, macOS hides icons behind the camera notch without telling you. To free up space, go to **System Settings › Control Centre** (called **Menu Bar** on newer macOS) and set a few built-in items to "Don't show in Menu Bar", such as Bluetooth, Now Playing or Spotlight. They stay available in Control Centre.
+
+### Updating
+
+To update, run the quick install command again. Your entries are not affected, because they live in iCloud Drive, not in the app.
+
+### Uninstalling
+
+To uninstall, run this in Terminal:
 
 ```
 rm -rf ~/Applications/"Gratitude Ledger.app" ~/Library/LaunchAgents/com.gratitudeledger.app.plist
 ```
+
+This removes the app but leaves your entries in iCloud Drive › Gratitude Ledger.
 
 ## Repo layout
 
