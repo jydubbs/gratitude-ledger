@@ -1,6 +1,6 @@
 # The Gratitude Ledger
 
-A small macOS menu bar journal. Each day you write what you're grateful for and tap how you feel. The year fills in as a grid of coloured squares, styled like an old typed ledger.
+A small macOS menu bar journal. Each day you write what you're grateful for and tap how you feel. The year fills in as a grid of coloured squares based on the dominant emotion of the day, styled with the aesthetic like an old typed ledger.
 
 ## Credits
 
@@ -9,10 +9,10 @@ A small macOS menu bar journal. Each day you write what you're grateful for and 
 
 ## What it does
 
-- **One page a day.** Write your gratitude and press Return to seal the page, which rings a typewriter bell. You can edit today's page, and you can still fill in yesterday's if you forgot.
+- **One page a day.** Write your gratitude (max 1000 words) and press Return to seal the page, which rings a typewriter bell. You can edit today's page, and you can still fill in yesterday's if you forgot.
 - **Feelings.** Choose from happy, excited, calm, grateful, tired, sad, anxious and angry. Tap a feeling once, twice or three times for mild, medium or strong. The strongest one colours that day's square, and stronger feelings give deeper ink.
-- **The year grid.** A GitHub-style grid of the calendar year. Hover over a square to peek at that day, and click it to keep the page open. Long pages scroll.
-- **Search and "on this day".** Search lights up every square that matches. "On this day" shows what you wrote on this date a year ago.
+- **The year grid.** Each daily submission is saved in a calendar grid-like format. Hover over a square to peek at that day, and click it to keep the page open. Long pages scroll.
+- **Search and "on this day".** Search lights up every square that matches the word entered. "On this day" shows what you wrote on this date a year ago.
 - **Menu bar book.** The book in the menu bar stays closed until today's page is written. An optional evening reminder arrives if the page is still blank.
 - **Your data.** Entries are saved as plain JSON in **iCloud Drive › Gratitude Ledger › entries.json**, with a local backup.
 - **When a day ends.** Each day runs until 4am, so writing late at night still counts for that day.
