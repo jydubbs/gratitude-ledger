@@ -5,6 +5,7 @@ enum PageChoice: Hashable { case today, yesterday }
 
 struct LedgerView: View {
     @EnvironmentObject var store: LedgerStore
+    @ObservedObject private var updater = Updater.shared
     @AppStorage(Prefs.muted) private var muted = false
     @AppStorage(Prefs.reminderOn) private var reminderOn = true
     @AppStorage(Prefs.reminderMinutes) private var reminderMinutes = 21 * 60
@@ -33,6 +34,7 @@ struct LedgerView: View {
             spine
             VStack(alignment: .leading, spacing: 14) {
                 header
+                updateBanner
                 if showSettings { settings }
                 writingPage
                 DashedRule()
@@ -124,6 +126,55 @@ struct LedgerView: View {
         writing = true
     }
 
+    // MARK: Updates
+
+    @ViewBuilder
+    private var updateBanner: some View {
+        switch updater.state {
+        case .idle:
+            EmptyView()
+        case .available:
+            banner(icon: "envelope", message: "a new edition of the ledger is available") {
+                Button("update") {
+                    commit(ding: false)
+                    updater.runUpdate()
+                }
+            }
+        case .updating:
+            banner(icon: "hourglass", message: "updating… the ledger will close and reopen in about a minute") {
+                ProgressView().controlSize(.small)
+            }
+        case .upToDate:
+            banner(icon: "checkmark", message: "you have the latest edition") {
+                Button("ok") { updater.dismissMessage() }
+            }
+        case .failed:
+            banner(icon: "exclamationmark.triangle", message: "the update didn't finish. Your entries are safe.") {
+                HStack(spacing: 6) {
+                    Button("show log") { updater.revealLog() }
+                    Button("try again") { updater.runUpdate() }
+                }
+            }
+        }
+    }
+
+    private func banner<Trailing: View>(icon: String, message: String,
+                                        @ViewBuilder trailing: () -> Trailing) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 11))
+            Text(message)
+            Spacer(minLength: 6)
+            trailing()
+        }
+        .font(Ink.typed(11))
+        .foregroundColor(Ink.ink)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(RoundedRectangle(cornerRadius: 4).fill(Ink.paperShade))
+        .overlay(RoundedRectangle(cornerRadius: 4).stroke(Ink.rule, lineWidth: 0.8))
+    }
+
     // MARK: Settings
 
     private var settings: some View {
@@ -143,6 +194,13 @@ struct LedgerView: View {
                 Spacer()
                 Button("show file") { store.revealFile() }
                 Button("quit") { NSApp.terminate(nil) }
+            }
+            HStack {
+                Text(updater.editionLabel)
+                    .foregroundColor(Ink.inkSoft)
+                Spacer()
+                Button("check for updates") { updater.check(manual: true) }
+                    .disabled(updater.state == .updating)
             }
         }
         .toggleStyle(.checkbox)

@@ -1,9 +1,10 @@
 """Assembles install-gratitude-ledger.sh: one script with the Swift source and sounds embedded."""
 import base64
+import hashlib
 import pathlib
 
 ROOT = pathlib.Path(__file__).parent
-SRC = ["App.swift", "Models.swift", "Store.swift", "Services.swift", "LedgerView.swift", "YearGrid.swift"]
+SRC = ["App.swift", "Models.swift", "Store.swift", "Services.swift", "Updater.swift", "LedgerView.swift", "YearGrid.swift"]
 SOUNDS = ["clack1", "clack2", "clack3", "bell"]
 
 HEAD = r'''#!/bin/bash
@@ -14,6 +15,7 @@ set -euo pipefail
 
 APP_NAME="Gratitude Ledger"
 EXEC="GratitudeLedger"
+BUILD="__BUILD__"   # fingerprint of src/ and sounds/; the app compares it with VERSION on GitHub
 BUNDLE_ID="com.gratitudeledger.app"
 DEST="$HOME/Applications/$APP_NAME.app"
 AGENT="$HOME/Library/LaunchAgents/$BUNDLE_ID.plist"
@@ -75,6 +77,7 @@ cat > "$DEST/Contents/Info.plist" <<PLIST_EOF
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>1.0</string>
   <key>CFBundleVersion</key><string>1</string>
+  <key>GLBuildHash</key><string>$BUILD</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
@@ -112,8 +115,19 @@ echo
 '''
 
 
+def build_hash() -> str:
+    """Changes whenever any source file or sound changes."""
+    h = hashlib.sha256()
+    for name in SRC:
+        h.update(name.encode() + b"\0" + (ROOT / "src" / name).read_bytes() + b"\0")
+    for name in SOUNDS:
+        h.update(name.encode() + b"\0" + (ROOT / "sounds" / f"{name}.wav").read_bytes() + b"\0")
+    return h.hexdigest()[:12]
+
+
 def main():
-    parts = [HEAD]
+    build = build_hash()
+    parts = [HEAD.replace("__BUILD__", build)]
     for name in SRC:
         code = (ROOT / "src" / name).read_text()
         assert "SWIFT_EOF" not in code
@@ -125,7 +139,8 @@ def main():
     out = ROOT / "install-gratitude-ledger.sh"
     out.write_text("".join(parts))
     out.chmod(0o755)
-    print(out, out.stat().st_size)
+    (ROOT / "VERSION").write_text(build + "\n")
+    print(out, out.stat().st_size, "build", build)
 
 
 if __name__ == "__main__":

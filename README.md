@@ -53,7 +53,11 @@ If your menu bar is full, macOS hides icons behind the camera notch without tell
 
 ### Updating
 
-To update, run the quick install command again. Your entries are not affected, because they live in iCloud Drive, not in the app.
+The app checks this repo about once a day. When there's a new version, a banner saying **"a new edition of the ledger is available"** appears at the top of the drop-down. Click **update**, and the ledger closes and reopens with the new version in about a minute. To check right away, open the gear menu and click **check for updates**.
+
+You can also update at any time by running the quick install command again. Either way, your entries are not affected, because they live in iCloud Drive, not in the app.
+
+Versions installed before the update checker was added can't check for updates, so run the quick install command once to get it.
 
 ### Uninstalling
 
@@ -69,4 +73,5 @@ This removes the app but leaves your entries in iCloud Drive › Gratitude Ledge
 
 - `src/` contains the SwiftUI app.
 - `sounds/` contains the typewriter key and bell sounds, which were synthesised for this project.
-- `build_installer.py` packs `src/` and `sounds/` into the single `install-gratitude-ledger.sh`. Re-run it after changing either folder.
+- `build_installer.py` packs `src/` and `sounds/` into the single `install-gratitude-ledger.sh`. It also writes `VERSION`, a fingerprint of the code that installed apps compare against to decide whether an update is available.
+- **After changing anything in `src/` or `sounds/`, run `python3 build_installer.py` and commit all three: your change, `install-gratitude-ledger.sh` and `VERSION`.** If you skip this, nobody's app will see the change.

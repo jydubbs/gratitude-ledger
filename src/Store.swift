@@ -101,6 +101,7 @@ final class LedgerStore: ObservableObject {
     private func tick() {
         refresh()
         Reminder.shared.check(store: self)
+        Updater.shared.checkIfDue()
     }
 
     // MARK: Queries

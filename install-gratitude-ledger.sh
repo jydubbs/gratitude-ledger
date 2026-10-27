@@ -6,6 +6,7 @@ set -euo pipefail
 
 APP_NAME="Gratitude Ledger"
 EXEC="GratitudeLedger"
+BUILD="c53b24652f73"   # fingerprint of src/ and sounds/; the app compares it with VERSION on GitHub
 BUNDLE_ID="com.gratitudeledger.app"
 DEST="$HOME/Applications/$APP_NAME.app"
 AGENT="$HOME/Library/LaunchAgents/$BUNDLE_ID.plist"
@@ -47,6 +48,10 @@ struct GratitudeLedgerApp: App {
         Prefs.registerDefaults()
         _store = StateObject(wrappedValue: LedgerStore())
         Reminder.shared.start()
+        // First update check shortly after launch, then once a day from the store's timer.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 15) {
+            Updater.shared.checkIfDue()
+        }
     }
 
     var body: some Scene {
@@ -340,6 +345,7 @@ final class LedgerStore: ObservableObject {
     private func tick() {
         refresh()
         Reminder.shared.check(store: self)
+        Updater.shared.checkIfDue()
     }
 
     // MARK: Queries
@@ -599,6 +605,113 @@ enum Ink {
 }
 SWIFT_EOF
 
+cat > "$WORK/src/Updater.swift" <<'SWIFT_EOF'
+import Foundation
+import AppKit
+
+/// Checks GitHub about once a day for a newer build and, on request, runs the installer.
+final class Updater: ObservableObject {
+    static let shared = Updater()
+
+    /// Where updates come from. A fork would change this one line.
+    static let repoRaw = "https://raw.githubusercontent.com/jydubbs/gratitude-ledger/main"
+
+    enum State: Equatable {
+        case idle
+        case upToDate               // only shown after a manual check
+        case available
+        case updating
+        case failed
+    }
+
+    @Published private(set) var state: State = .idle
+
+    /// The fingerprint baked into this build by the installer ("unknown" for builds made before updates existed).
+    let currentBuild: String =
+        (Bundle.main.object(forInfoDictionaryKey: "GLBuildHash") as? String) ?? "unknown"
+
+    let logURL: URL = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Library/Logs/Gratitude Ledger update.log")
+
+    private let lastCheckKey = "lastUpdateCheck"
+    private let checkEvery: TimeInterval = 24 * 3600
+
+    /// Called every minute; only actually checks once a day.
+    func checkIfDue() {
+        let last = UserDefaults.standard.double(forKey: lastCheckKey)
+        if Date().timeIntervalSince1970 - last >= checkEvery { check(manual: false) }
+    }
+
+    func check(manual: Bool) {
+        guard state != .updating, let url = URL(string: Self.repoRaw + "/VERSION") else { return }
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        request.timeoutInterval = 20
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, _ in
+            let ok = (response as? HTTPURLResponse)?.statusCode == 200
+            let remote = data.flatMap { String(data: $0, encoding: .utf8) }?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            DispatchQueue.main.async {
+                guard let self else { return }
+                // Offline or odd reply: stay quiet and try again tomorrow.
+                guard ok, !remote.isEmpty, remote.count <= 64 else { return }
+                UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: self.lastCheckKey)
+                if remote != self.currentBuild {
+                    self.state = .available
+                } else {
+                    self.state = manual ? .upToDate : .idle
+                }
+            }
+        }.resume()
+    }
+
+    /// Runs the same install command as the README. The installer quits this app,
+    /// replaces it and opens the new one; the journal file in iCloud is untouched.
+    func runUpdate() {
+        state = .updating
+        let fm = FileManager.default
+        try? fm.createDirectory(at: logURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        fm.createFile(atPath: logURL.path, contents: Data("Update started \(Date())\n".utf8))
+        guard let log = try? FileHandle(forWritingTo: logURL) else { state = .failed; return }
+        log.seekToEndOfFile()
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/bash")
+        process.arguments = ["-c", "set -o pipefail; curl -fsSL '\(Self.repoRaw)/install-gratitude-ledger.sh' | bash"]
+        var env = ProcessInfo.processInfo.environment
+        env["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin"
+        process.environment = env
+        process.standardOutput = log
+        process.standardError = log
+        process.terminationHandler = { [weak self] proc in
+            // On success the installer has already quit this app, so reaching here means it stopped early.
+            DispatchQueue.main.async {
+                if proc.terminationStatus != 0 { self?.state = .failed }
+            }
+        }
+        do {
+            try process.run()
+        } catch {
+            log.write(Data("Couldn't start the installer: \(error.localizedDescription)\n".utf8))
+            state = .failed
+        }
+    }
+
+    func dismissMessage() {
+        if state == .upToDate || state == .failed { state = .idle }
+    }
+
+    func revealLog() {
+        NSWorkspace.shared.activateFileViewerSelecting([logURL])
+    }
+
+    /// Short form shown in settings.
+    var editionLabel: String {
+        currentBuild == "unknown" ? "first edition" : "edition \(currentBuild.prefix(7))"
+    }
+}
+SWIFT_EOF
+
 cat > "$WORK/src/LedgerView.swift" <<'SWIFT_EOF'
 import SwiftUI
 import AppKit
@@ -607,6 +720,7 @@ enum PageChoice: Hashable { case today, yesterday }
 
 struct LedgerView: View {
     @EnvironmentObject var store: LedgerStore
+    @ObservedObject private var updater = Updater.shared
     @AppStorage(Prefs.muted) private var muted = false
     @AppStorage(Prefs.reminderOn) private var reminderOn = true
     @AppStorage(Prefs.reminderMinutes) private var reminderMinutes = 21 * 60
@@ -635,6 +749,7 @@ struct LedgerView: View {
             spine
             VStack(alignment: .leading, spacing: 14) {
                 header
+                updateBanner
                 if showSettings { settings }
                 writingPage
                 DashedRule()
@@ -726,6 +841,55 @@ struct LedgerView: View {
         writing = true
     }
 
+    // MARK: Updates
+
+    @ViewBuilder
+    private var updateBanner: some View {
+        switch updater.state {
+        case .idle:
+            EmptyView()
+        case .available:
+            banner(icon: "envelope", message: "a new edition of the ledger is available") {
+                Button("update") {
+                    commit(ding: false)
+                    updater.runUpdate()
+                }
+            }
+        case .updating:
+            banner(icon: "hourglass", message: "updating… the ledger will close and reopen in about a minute") {
+                ProgressView().controlSize(.small)
+            }
+        case .upToDate:
+            banner(icon: "checkmark", message: "you have the latest edition") {
+                Button("ok") { updater.dismissMessage() }
+            }
+        case .failed:
+            banner(icon: "exclamationmark.triangle", message: "the update didn't finish. Your entries are safe.") {
+                HStack(spacing: 6) {
+                    Button("show log") { updater.revealLog() }
+                    Button("try again") { updater.runUpdate() }
+                }
+            }
+        }
+    }
+
+    private func banner<Trailing: View>(icon: String, message: String,
+                                        @ViewBuilder trailing: () -> Trailing) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 11))
+            Text(message)
+            Spacer(minLength: 6)
+            trailing()
+        }
+        .font(Ink.typed(11))
+        .foregroundColor(Ink.ink)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(RoundedRectangle(cornerRadius: 4).fill(Ink.paperShade))
+        .overlay(RoundedRectangle(cornerRadius: 4).stroke(Ink.rule, lineWidth: 0.8))
+    }
+
     // MARK: Settings
 
     private var settings: some View {
@@ -745,6 +909,13 @@ struct LedgerView: View {
                 Spacer()
                 Button("show file") { store.revealFile() }
                 Button("quit") { NSApp.terminate(nil) }
+            }
+            HStack {
+                Text(updater.editionLabel)
+                    .foregroundColor(Ink.inkSoft)
+                Spacer()
+                Button("check for updates") { updater.check(manual: true) }
+                    .disabled(updater.state == .updating)
             }
         }
         .toggleStyle(.checkbox)
@@ -4175,6 +4346,7 @@ cat > "$DEST/Contents/Info.plist" <<PLIST_EOF
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>1.0</string>
   <key>CFBundleVersion</key><string>1</string>
+  <key>GLBuildHash</key><string>$BUILD</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>

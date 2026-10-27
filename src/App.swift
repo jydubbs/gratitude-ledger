@@ -8,6 +8,10 @@ struct GratitudeLedgerApp: App {
         Prefs.registerDefaults()
         _store = StateObject(wrappedValue: LedgerStore())
         Reminder.shared.start()
+        // First update check shortly after launch, then once a day from the store's timer.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 15) {
+            Updater.shared.checkIfDue()
+        }
     }
 
     var body: some Scene {
