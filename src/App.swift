@@ -1,10 +1,19 @@
 import SwiftUI
+import AppKit
 
 @main
 struct GratitudeLedgerApp: App {
     @StateObject private var store: LedgerStore
 
     init() {
+        // If the ledger is already running (say, opened by hand while macOS also started it),
+        // bow out quietly. Exit code 0 tells macOS not to restart this copy.
+        let me = ProcessInfo.processInfo.processIdentifier
+        if let id = Bundle.main.bundleIdentifier,
+           NSRunningApplication.runningApplications(withBundleIdentifier: id)
+               .contains(where: { $0.processIdentifier != me && !$0.isTerminated }) {
+            exit(0)
+        }
         Prefs.registerDefaults()
         _store = StateObject(wrappedValue: LedgerStore())
         Reminder.shared.start()

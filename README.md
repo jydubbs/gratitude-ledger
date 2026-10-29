@@ -64,7 +64,7 @@ Versions installed before the update checker was added can't check for updates, 
 To uninstall, run this in Terminal:
 
 ```
-rm -rf ~/Applications/"Gratitude Ledger.app" ~/Library/LaunchAgents/com.gratitudeledger.app.plist
+launchctl bootout gui/$(id -u)/com.gratitudeledger.app; rm -rf ~/Applications/"Gratitude Ledger.app" ~/Library/LaunchAgents/com.gratitudeledger.app.plist
 ```
 
 This removes the app but leaves your entries in iCloud Drive › Gratitude Ledger.

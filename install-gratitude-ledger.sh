@@ -6,7 +6,7 @@ set -euo pipefail
 
 APP_NAME="Gratitude Ledger"
 EXEC="GratitudeLedger"
-BUILD="c53b24652f73"   # fingerprint of src/ and sounds/; the app compares it with VERSION on GitHub
+BUILD="a1ce8882ad0b"   # fingerprint of src/ and sounds/; the app compares it with VERSION on GitHub
 BUNDLE_ID="com.gratitudeledger.app"
 DEST="$HOME/Applications/$APP_NAME.app"
 AGENT="$HOME/Library/LaunchAgents/$BUNDLE_ID.plist"
@@ -39,12 +39,21 @@ mkdir -p "$WORK/src" "$WORK/sounds"
 say "Unpacking the ledger…"
 cat > "$WORK/src/App.swift" <<'SWIFT_EOF'
 import SwiftUI
+import AppKit
 
 @main
 struct GratitudeLedgerApp: App {
     @StateObject private var store: LedgerStore
 
     init() {
+        // If the ledger is already running (say, opened by hand while macOS also started it),
+        // bow out quietly. Exit code 0 tells macOS not to restart this copy.
+        let me = ProcessInfo.processInfo.processIdentifier
+        if let id = Bundle.main.bundleIdentifier,
+           NSRunningApplication.runningApplications(withBundleIdentifier: id)
+               .contains(where: { $0.processIdentifier != me && !$0.isTerminated }) {
+            exit(0)
+        }
         Prefs.registerDefaults()
         _store = StateObject(wrappedValue: LedgerStore())
         Reminder.shared.start()
@@ -4327,7 +4336,15 @@ xcrun swiftc -O -parse-as-library \
   -o "$WORK/$EXEC"
 
 say "Binding the pages…"
+GUI="gui/$(id -u)"
+# Stop the running ledger (and its start-at-login job) before replacing it.
+launchctl bootout "$GUI/$BUNDLE_ID" >/dev/null 2>&1 || true
 pkill -x "$EXEC" >/dev/null 2>&1 || true
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  pgrep -x "$EXEC" >/dev/null 2>&1 || break
+  sleep 0.5
+done
+pkill -9 -x "$EXEC" >/dev/null 2>&1 || true
 mkdir -p "$HOME/Applications"
 rm -rf "$DEST"
 mkdir -p "$DEST/Contents/MacOS" "$DEST/Contents/Resources"
@@ -4356,7 +4373,8 @@ PLIST_EOF
 
 codesign --force --sign - "$DEST" >/dev/null 2>&1 || true
 
-# Start at login.
+# Start at login, and have macOS restart the ledger if it ever quits unexpectedly.
+# Choosing "quit" in the gear menu is respected: it stays closed until the next login.
 mkdir -p "$HOME/Library/LaunchAgents"
 cat > "$AGENT" <<AGENT_EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -4366,18 +4384,32 @@ cat > "$AGENT" <<AGENT_EOF
   <key>Label</key><string>$BUNDLE_ID</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/usr/bin/open</string>
-    <string>-a</string>
-    <string>$DEST</string>
+    <string>$DEST/Contents/MacOS/$EXEC</string>
   </array>
   <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key><false/>
+  </dict>
+  <key>ThrottleInterval</key><integer>30</integer>
+  <key>LimitLoadToSessionType</key><string>Aqua</string>
+  <key>ProcessType</key><string>Interactive</string>
+  <key>AbandonProcessGroup</key><true/>
 </dict>
 </plist>
 AGENT_EOF
 
-open "$DEST"
+# Load the job now (this also starts the ledger). Retry briefly in case the old job is still unloading.
+STARTED=no
+for _ in 1 2 3 4 5; do
+  if launchctl bootstrap "$GUI" "$AGENT" >/dev/null 2>&1; then STARTED=yes; break; fi
+  sleep 1
+done
+if [[ "$STARTED" != yes ]]; then
+  open "$DEST"
+fi
 
 say "Done. Look for the little closed book in your menu bar (top right)."
 say "Your entries are kept in iCloud Drive > Gratitude Ledger > entries.json"
-say "To uninstall later:  rm -rf \"$DEST\" \"$AGENT\""
+say "To uninstall later:  launchctl bootout $GUI/$BUNDLE_ID; rm -rf \"$DEST\" \"$AGENT\""
 echo
